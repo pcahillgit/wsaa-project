@@ -1,63 +1,110 @@
-import mysql.connector
+# File: rest_server.py
+from flask import Flask, request, jsonify, send_from_directory
+import os
+
+app = Flask(__name__, static_url_path='', static_folder='staticpages')
+
+@app.route('/tasks', methods=['GET'])
+def getAll():
+    return jsonify(taskDAO.getAll())
+
+@app.route('/tasks/<int:id>', methods=['GET'])
+def findById(id):
+    return jsonify(taskDAO.findByID(id))
+
+@app.route('/tasks', methods=['POST'])
+def create():
+    task = request.json
+    return jsonify(taskDAO.create(task))
+
+@app.route('/tasks/<int:id>', methods=['PUT'])
+def update(id):
+    task = request.json
+    return jsonify(taskDAO.update(id, task))
+
+@app.route('/tasks/<int:id>', methods=['DELETE'])
+def delete(id):
+    return jsonify(taskDAO.delete(id))
+
+@app.route('/')
+def serve_index():
+    return send_from_directory(app.static_folder, 'index.html')
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
+# File: taskdao.py (unchanged from last version)
+import sqlite3
+import os
 
 class TaskDAO:
     def __init__(self):
-        self.host = "localhost"
-        self.user = "root"
-        self.password = ""
-        self.database = "wsaa"
+        self.dbfile = os.path.join(os.path.dirname(__file__), "tasks.db")
+        self.init_db()
 
     def getConnection(self):
-        return mysql.connector.connect(
-            host=self.host,
-            user=self.user,
-            password=self.password,
-            database=self.database
-        )
+        return sqlite3.connect(self.dbfile)
+
+    def init_db(self):
+        with self.getConnection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    assigned_to TEXT,
+                    done BOOLEAN
+                )
+            ''')
+            conn.commit()
 
     def getAll(self):
-        db = self.getConnection()
-        cursor = db.cursor()
+        conn = self.getConnection()
+        cursor = conn.cursor()
         cursor.execute("SELECT * FROM tasks")
         results = cursor.fetchall()
-        db.close()
-        return results
+        conn.close()
+        return [dict(id=row[0], title=row[1], assigned_to=row[2], done=bool(row[3])) for row in results]
 
     def findByID(self, id):
-        db = self.getConnection()
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM tasks WHERE id = %s", (id,))
-        result = cursor.fetchone()
-        db.close()
-        return result
+        conn = self.getConnection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tasks WHERE id = ?", (id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return dict(id=row[0], title=row[1], assigned_to=row[2], done=bool(row[3]))
+        else:
+            return {}
 
     def create(self, task):
-        db = self.getConnection()
-        cursor = db.cursor()
-        sql = "INSERT INTO tasks (title, assigned_to, done) VALUES (%s, %s, %s)"
+        conn = self.getConnection()
+        cursor = conn.cursor()
+        sql = "INSERT INTO tasks (title, assigned_to, done) VALUES (?, ?, ?)"
         values = (task['title'], task['assigned_to'], task['done'])
         cursor.execute(sql, values)
-        db.commit()
+        conn.commit()
         new_id = cursor.lastrowid
-        db.close()
+        conn.close()
         return new_id
 
     def update(self, id, task):
-        db = self.getConnection()
-        cursor = db.cursor()
-        sql = "UPDATE tasks SET title = %s, assigned_to = %s, done = %s WHERE id = %s"
+        conn = self.getConnection()
+        cursor = conn.cursor()
+        sql = "UPDATE tasks SET title = ?, assigned_to = ?, done = ? WHERE id = ?"
         values = (task['title'], task['assigned_to'], task['done'], id)
         cursor.execute(sql, values)
-        db.commit()
-        db.close()
+        conn.commit()
+        conn.close()
         return True
 
     def delete(self, id):
-        db = self.getConnection()
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM tasks WHERE id = %s", (id,))
-        db.commit()
-        db.close()
+        conn = self.getConnection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tasks WHERE id = ?", (id,))
+        conn.commit()
+        conn.close()
         return True
 
 taskDAO = TaskDAO()
